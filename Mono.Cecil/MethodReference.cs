@@ -25,6 +25,8 @@ namespace Mono.Cecil {
 		MethodCallingConvention calling_convention;
 		internal Collection<GenericParameter> generic_parameters;
 
+		public byte [] RawSignature { get; set; }
+
 		public virtual bool HasThis {
 			get { return has_this; }
 			set { has_this = value; }
@@ -156,6 +158,13 @@ namespace Mono.Cecil {
 		{
 			Mixin.CheckType (declaringType, Mixin.Argument.declaringType);
 
+			this.DeclaringType = declaringType;
+		}
+
+		public MethodReference (string name, byte [] sig, TypeReference declaringType)
+			: base (name)
+		{ 
+			RawSignature = sig;
 			this.DeclaringType = declaringType;
 		}
 

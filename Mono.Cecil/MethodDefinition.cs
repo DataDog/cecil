@@ -511,6 +511,16 @@ namespace Mono.Cecil {
 			this.token = new MetadataToken (TokenType.Method);
 		}
 
+		public MethodDefinition (string name, MethodAttributes attributes, byte[] sig, TypeDefinition declaringType)
+		{
+			this.Name = name;
+			this.attributes = (ushort)attributes;
+			this.RawSignature = sig;
+			this.DeclaringType = declaringType;
+			this.token = new MetadataToken (TokenType.Method);
+		}
+
+
 		public override MethodDefinition Resolve ()
 		{
 			return this;

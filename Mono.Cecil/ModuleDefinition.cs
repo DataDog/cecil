@@ -18,12 +18,15 @@ using Mono.Cecil.Cil;
 using Mono.Cecil.Metadata;
 using Mono.Cecil.PE;
 using Mono.Collections.Generic;
+using System.Reflection;
+using System.Linq;
+using System.Security.Cryptography;
 
 namespace Mono.Cecil {
 
 	public enum ReadingMode {
 		Immediate = 1,
-		Deferred = 2,
+		Deferred = 2
 	}
 
 	public sealed class ReaderParameters {
@@ -227,6 +230,8 @@ namespace Mono.Cecil {
 		}
 
 		public bool DeterministicMvid { get; set; }
+
+		public bool Raw { get; set; }
 	}
 
 	public sealed class ModuleDefinition : ModuleReference, ICustomAttributeProvider, ICustomDebugInformationProvider, IDisposable {
@@ -275,6 +280,81 @@ namespace Mono.Cecil {
 		internal Collection<CustomDebugInformation> custom_infos;
 
 		internal MetadataBuilder metadata_builder;
+
+		#region RAW methods
+
+		public MetadataToken AddRaw (string userString)
+		{
+			var offset = MetadataSystem.UserStringsHeap.GetStringIndex(userString);
+			MetadataSystem.UserStrings [offset] = userString;
+			return new MetadataToken (offset);
+		}
+
+		public MetadataToken AddRaw (byte [] signature)
+		{ 
+			var token = new MetadataToken (TokenType.Signature, MetadataSystem.StandAloneSigs.Count + 1);
+			MetadataSystem.StandAloneSigs[token] = signature;
+			return token;
+		}
+
+		public ModuleReference AddRaw (ModuleReference value)
+		{
+			value.MetadataToken = new MetadataToken (TokenType.ModuleRef, MetadataSystem.ModuleReferences.Length + 1);
+			var values = MetadataSystem.ModuleReferences.ToList ();
+			values.Add (value);
+			MetadataSystem.ModuleReferences = values.ToArray ();
+			modules.Add(value);
+			return value;
+		}
+
+		public TypeDefinition AddRaw (TypeDefinition value)
+		{
+			value.MetadataToken = new MetadataToken (TokenType.TypeDef, MetadataSystem.Types.Length + 1);
+			var values = MetadataSystem.Types.ToList ();
+			values.Add (value);
+			MetadataSystem.Types = values.ToArray ();
+			return value;
+		}
+
+		public FieldDefinition AddRaw (FieldDefinition value)
+		{
+			value.MetadataToken = new MetadataToken (TokenType.Field, MetadataSystem.Fields.Length + 1);
+			var values = MetadataSystem.Fields.ToList ();
+			values.Add (value);
+			MetadataSystem.Fields = values.ToArray ();
+			value.DeclaringType.Fields.Add (value);
+			return value;
+		}
+
+		public MethodDefinition AddRaw (MethodDefinition value)
+		{
+			value.MetadataToken = new MetadataToken (TokenType.Method, MetadataSystem.Methods.Length + 1);
+			var values = MetadataSystem.Methods.ToList ();
+			values.Add (value);
+			MetadataSystem.Methods = values.ToArray ();
+			value.DeclaringType.Methods.Add (value);
+			return value;
+		}
+
+		public TypeReference AddRaw (TypeReference value)
+		{
+			value.MetadataToken = new MetadataToken (TokenType.TypeRef, MetadataSystem.TypeReferences.Length + 1);
+			var values = MetadataSystem.TypeReferences.ToList ();
+			values.Add(value);
+			MetadataSystem.TypeReferences = values.ToArray ();
+			return value;
+		}
+
+		public MemberReference AddRaw (MemberReference value)
+		{
+			value.MetadataToken = new MetadataToken (TokenType.MemberRef, MetadataSystem.MemberReferences.Length + 1);
+			var values = MetadataSystem.MemberReferences.ToList ();
+			values.Add (value);
+			MetadataSystem.MemberReferences = values.ToArray ();
+			return value;
+		}
+
+		#endregion
 
 		public bool IsMain {
 			get { return kind != ModuleKind.NetModule; }
@@ -645,20 +725,71 @@ namespace Mono.Cecil {
 			return Read (new Row<string, string> (scope, fullname), (row, reader) => reader.GetTypeReference (row.Col1, row.Col2));
 		}
 
-		public IEnumerable<TypeReference> GetTypeReferences ()
+		public IEnumerable<TypeReference> GetTypeReferences (bool init = false)
 		{
 			if (!HasImage)
 				return Empty<TypeReference>.Array;
 
+			if (ReadingMode == ReadingMode.Immediate && !init)
+				return MetadataSystem.TypeReferences;
+
 			return Read (this, (_, reader) => reader.GetTypeReferences ());
 		}
 
-		public IEnumerable<MemberReference> GetMemberReferences ()
+		public IEnumerable<MemberReference> GetMemberReferences (bool init = false)
 		{
 			if (!HasImage)
 				return Empty<MemberReference>.Array;
 
+			if (ReadingMode == ReadingMode.Immediate && !init)
+				return MetadataSystem.MemberReferences;
+
 			return Read (this, (_, reader) => reader.GetMemberReferences ());
+		}
+
+		public int ReadStandAloneSigs ()
+		{
+			//Read all the method bodies
+			foreach (var type in assembly.MainModule.Types) {
+				foreach (var method in type.Methods) {
+					_ = method.Body;
+				}
+			}
+
+			return MetadataSystem.StandAloneSigs.Count;
+		}
+
+		public int ReadBlob ()
+		{
+			var heap = Image.BlobHeap;
+			if (heap is null) {
+				return 0;
+			}
+
+			uint index = 0;
+			while (true) {
+				byte [] buffer = heap.Read (index);
+				if(index > 0 && (buffer is null || buffer.Length == 0)) {
+					break;
+				}
+				index += (uint)buffer.Length + 1;
+			}
+
+			return heap.Blobs.Count;
+		}
+
+		public int ReadUserStrings ()
+		{
+			var heap = Image.UserStringHeap;
+			if (heap is null) {
+				return 0;
+			}
+
+			foreach(var userString in heap.Strings) {
+				_ = AddRaw(userString.Value);
+			}
+
+			return MetadataSystem.UserStrings.Count;
 		}
 
 		public IEnumerable<CustomAttribute> GetCustomAttributes ()

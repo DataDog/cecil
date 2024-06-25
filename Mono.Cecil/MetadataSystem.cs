@@ -65,6 +65,10 @@ namespace Mono.Cecil {
 		internal Dictionary<uint, uint> StateMachineMethods;
 		internal Dictionary<MetadataToken, Row<Guid, uint, uint> []> CustomDebugInformations;
 
+		internal Dictionary<MetadataToken, byte []> StandAloneSigs = new Dictionary<MetadataToken, byte []>();
+		internal Dictionary<uint, string> UserStrings = new Dictionary<uint, string> ();
+		internal UserStringHeapBuffer UserStringsHeap = new UserStringHeapBuffer ();
+
 		static Dictionary<string, Row<ElementType, bool>> primitive_value_types;
 
 		static void InitializePrimitives ()
@@ -378,5 +382,6 @@ namespace Mono.Cecil {
 
 			return null;
 		}
+
 	}
 }

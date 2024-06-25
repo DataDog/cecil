@@ -19,6 +19,8 @@ namespace Mono.Cecil {
 
 		readonly MethodReference signature;
 
+		public byte [] RawSignature { get => signature.RawSignature; set => signature.RawSignature = value; }
+
 		public bool HasThis {
 			get { return signature.HasThis; }
 			set { signature.HasThis = value; }
