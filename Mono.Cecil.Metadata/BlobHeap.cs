@@ -9,6 +9,7 @@
 //
 
 using System;
+using System.Collections.Generic;
 
 namespace Mono.Cecil.Metadata {
 
@@ -34,6 +35,8 @@ namespace Mono.Cecil.Metadata {
 
 			Buffer.BlockCopy (data, position, buffer, 0, length);
 
+			Blobs [index] = buffer;
+
 			return buffer;
 		}
 
@@ -50,5 +53,7 @@ namespace Mono.Cecil.Metadata {
 			index = (int) signature;
 			length = (int) buffer.ReadCompressedUInt32 (ref index);
 		}
+
+		internal Dictionary<uint, byte []> Blobs = new Dictionary<uint, byte []> ();
 	}
 }

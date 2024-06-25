@@ -55,11 +55,21 @@ namespace Mono.Cecil.Cil {
 		{
 			var position = MoveTo (method);
 			this.body = new MethodBody (method);
+			var initialOffset = Position;
 
 			ReadMethodBody ();
 
+			body.RawBody = GetReadBuffer ();
+
 			MoveBackTo (position);
 			return this.body;
+
+			byte [] GetReadBuffer ()
+			{
+				var len = Position - initialOffset;
+				Position = initialOffset;
+				return ReadBytes(len);
+			}
 		}
 
 		public int ReadCodeSize (MethodDefinition method)

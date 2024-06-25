@@ -56,5 +56,7 @@ namespace Mono.Cecil.Metadata {
 
 			return Encoding.UTF8.GetString (data, start, length);
 		}
+
+		internal Dictionary<uint, string> Strings => strings;
 	}
 }

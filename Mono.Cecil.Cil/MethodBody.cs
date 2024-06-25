@@ -29,6 +29,8 @@ namespace Mono.Cecil.Cil {
 		internal Collection<ExceptionHandler> exceptions;
 		internal Collection<VariableDefinition> variables;
 
+		public byte [] RawBody { get; set; }
+
 		public MethodDefinition Method {
 			get { return method; }
 		}
