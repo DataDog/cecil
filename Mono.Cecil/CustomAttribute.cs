@@ -81,6 +81,8 @@ namespace Mono.Cecil {
 		internal Collection<CustomAttributeNamedArgument> fields;
 		internal Collection<CustomAttributeNamedArgument> properties;
 
+		public MetadataToken MetadataToken { get; set; }
+
 		public MethodReference Constructor {
 			get { return constructor; }
 			set { constructor = value; }
@@ -159,8 +161,9 @@ namespace Mono.Cecil {
 			get { return constructor.Module; }
 		}
 
-		internal CustomAttribute (uint signature, MethodReference constructor)
+		internal CustomAttribute (MetadataToken token, uint signature, MethodReference constructor)
 		{
+			this.MetadataToken = token;
 			this.signature = signature;
 			this.constructor = constructor;
 			this.resolved = false;

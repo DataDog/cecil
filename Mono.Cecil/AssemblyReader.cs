@@ -2531,6 +2531,7 @@ namespace Mono.Cecil {
 
 		void ReadCustomAttributeRange (Range range, Collection<CustomAttribute> custom_attributes)
 		{
+			var token = new MetadataToken (TokenType.CustomAttribute, range.Start);
 			if (!MoveTo (Table.CustomAttribute, range.Start))
 				return;
 
@@ -2542,7 +2543,7 @@ namespace Mono.Cecil {
 
 				var signature = ReadBlobIndex ();
 
-				custom_attributes.Add (new CustomAttribute (signature, constructor));
+				custom_attributes.Add (new CustomAttribute (token, signature, constructor));
 			}
 		}
 
