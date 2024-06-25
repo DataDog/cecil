@@ -25,8 +25,6 @@ namespace Mono.Cecil {
 		MethodCallingConvention calling_convention;
 		internal Collection<GenericParameter> generic_parameters;
 
-		public byte [] RawSignature { get; set; }
-
 		public virtual bool HasThis {
 			get { return has_this; }
 			set { has_this = value; }

@@ -1299,11 +1299,13 @@ namespace Mono.Cecil {
 		{
 			var attributes = (FieldAttributes) ReadUInt16 ();
 			var name = ReadString ();
-			var signature = ReadBlobIndex ();
+			var signatureTypeRef = ReadFieldType (ReadBlobIndex (), out var rawSignature);
 
-			var field = new FieldDefinition (name, attributes, ReadFieldType (signature));
+			var field = new FieldDefinition (name, attributes, signatureTypeRef);
 			field.token = new MetadataToken (TokenType.Field, field_rid);
 			metadata.AddFieldDefinition (field);
+
+			field.RawSignature = rawSignature;
 
 			if (IsDeleted (field))
 				return;
@@ -1322,16 +1324,23 @@ namespace Mono.Cecil {
 			metadata.Fields = new FieldDefinition [image.GetTableLength (Table.Field)];
 		}
 
-		TypeReference ReadFieldType (uint signature)
+		TypeReference  ReadFieldType (uint signature, out byte [] rawSignature)
 		{
 			var reader = ReadSignature (signature);
 
+			var position = reader.position;
 			const byte field_sig = 0x6;
 
 			if (reader.ReadByte () != field_sig)
 				throw new NotSupportedException ();
 
-			return reader.ReadTypeSignature ();
+			var typeRef = reader.ReadTypeSignature ();
+			
+			var len = reader.position - position;
+			reader.position = position;
+			rawSignature = reader.ReadBytes (len);
+
+			return typeRef;
 		}
 
 		public int ReadFieldRVA (FieldDefinition field)
@@ -2434,7 +2443,7 @@ namespace Mono.Cecil {
 			if (!MoveTo (Table.StandAloneSig, token.RID))
 				return null;
 
-			return ReadFieldType (ReadBlobIndex ());
+			return ReadFieldType (ReadBlobIndex (), out _);
 		}
 
 		public object ReadConstant (IConstantProvider owner)
