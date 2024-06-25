@@ -2526,6 +2526,10 @@ namespace Mono.Cecil {
 				foreach (var custom_attribute in custom_attributes)
 					WindowsRuntimeProjections.Project (owner, custom_attributes, custom_attribute);
 
+			foreach (var attribute in custom_attributes) { 
+				attribute.Owner = owner;
+			}
+
 			return custom_attributes;
 		}
 

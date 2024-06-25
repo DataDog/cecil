@@ -83,6 +83,8 @@ namespace Mono.Cecil {
 
 		public MetadataToken MetadataToken { get; set; }
 
+		public IMetadataTokenProvider Owner { get; set; }
+
 		public MethodReference Constructor {
 			get { return constructor; }
 			set { constructor = value; }

@@ -354,6 +354,12 @@ namespace Mono.Cecil {
 			return value;
 		}
 
+		public string GetUserString(MetadataToken token)
+		{
+			MetadataSystem.UserStrings.TryGetValue(token.RID, out string text);
+			return text;
+		}
+
 		#endregion
 
 		public bool IsMain {
