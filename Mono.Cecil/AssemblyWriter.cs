@@ -1385,6 +1385,10 @@ namespace Mono.Cecil {
 
 		protected MetadataToken AddTypeSpecification (TypeReference type, uint row)
 		{
+			if (type_spec_map.TryGetValue (row, out var res)) {
+				return res;
+			}
+
 			type.token = new MetadataToken (TokenType.TypeSpec, typespec_table.AddRow (row));
 
 			var token = type.token;
@@ -1526,6 +1530,9 @@ namespace Mono.Cecil {
 			}
 		}
 
+		protected virtual RVA GetGenericParameterRiid (int number, GenericParameterAttributes attributes, MetadataToken owner, string name) { return 0; }
+		protected virtual RVA AddGenericParameterConstraintRiid (MetadataToken owner, MetadataToken type) { return 0; }
+
 		protected void AddGenericParameters ()
 		{
 			var items = this.generic_parameters.items;
@@ -1538,16 +1545,19 @@ namespace Mono.Cecil {
 			for (int i = 0; i < size; i++) {
 				var generic_parameter = items [i];
 
-				var rid = generic_param_table.AddRow (new GenericParamRow (
-					(ushort) generic_parameter.Position,
+				RVA rid = GetGenericParameterRiid (generic_parameter.Position, generic_parameter.Attributes, generic_parameter.Owner.MetadataToken, generic_parameter.Name);
+				if (rid == 0) {
+					rid = (RVA)generic_param_table.AddRow (new GenericParamRow (
+					(ushort)generic_parameter.Position,
 					generic_parameter.Attributes,
 					MakeCodedRID (generic_parameter.Owner, CodedIndex.TypeOrMethodDef),
 					GetStringIndex (generic_parameter.Name)));
 
-				generic_parameter.token = new MetadataToken (TokenType.GenericParam, rid);
+					generic_parameter.token = new MetadataToken (TokenType.GenericParam, rid);
 
-				if (generic_parameter.HasConstraints)
-					AddConstraints (generic_parameter, generic_param_constraint_table);
+					if (generic_parameter.HasConstraints)
+						AddConstraints (generic_parameter, generic_param_constraint_table);
+				}
 
 				if (generic_parameter.HasCustomAttributes)
 					AddCustomAttributes (generic_parameter);
@@ -1563,9 +1573,12 @@ namespace Mono.Cecil {
 			for (int i = 0; i < constraints.Count; i++) {
 				var constraint = constraints [i];
 
-				var rid = table.AddRow (new GenericParamConstraintRow (
+				RVA rid = AddGenericParameterConstraintRiid (generic_parameter.MetadataToken, constraint.MetadataToken);
+				if (rid == 0) {
+					rid = (RVA)table.AddRow (new GenericParamConstraintRow (
 					gp_rid,
 					MakeCodedRID (GetTypeToken (constraint.ConstraintType), CodedIndex.TypeDefOrRef)));
+				}
 
 				constraint.token = new MetadataToken (TokenType.GenericParamConstraint, rid);
 

@@ -190,12 +190,17 @@ namespace Mono.Cecil {
 
 			if (module.ReadingMode == ReadingMode.Immediate) {
 				//Preload all values
+				_ = module.ReadBlob ();
+				_ = module.ReadUserStrings ();
+				_ = module.ReadGenericParameters ();
+				_ = module.ReadGenericParameterContraints ();
+
 				_ = module.GetTypeReferences (true);
 				_ = module.GetMemberReferences (true);
 				_ = module.ModuleReferences;
+				_ = module.ReadTypeSpecs ();
+				_ = module.ReadMethodSpecs ();
 				_ = module.ReadStandAloneSigs ();
-				_ = module.ReadBlob ();
-				_ = module.ReadUserStrings ();
 			}
 		}
 
@@ -1204,7 +1209,7 @@ namespace Mono.Cecil {
 			return type_references;
 		}
 
-		TypeReference GetTypeSpecification (uint rid)
+		internal TypeReference GetTypeSpecification (uint rid)
 		{
 			if (!MoveTo (Table.TypeSpec, rid))
 				return null;
@@ -1949,6 +1954,33 @@ namespace Mono.Cecil {
 			}
 		}
 
+		internal Tuple<int, GenericParameterAttributes, MetadataToken, string> ReadRawGenericParameter (uint riid)
+		{
+			if (!MoveTo (Table.GenericParam, riid)) {
+				return default;
+			}
+
+			var number = ReadUInt16 (); // index
+			var attributes = (GenericParameterAttributes)ReadUInt16 ();
+			var owner = ReadMetadataToken (CodedIndex.TypeOrMethodDef);
+			var name = ReadString ();
+
+			return Tuple.Create ((int)number, attributes, owner, name);
+		}
+
+		internal Tuple<MetadataToken, MetadataToken> ReadRawGenericParameterConstraint (uint riid)
+		{
+			if (!MoveTo (Table.GenericParamConstraint, riid)) {
+				return default;
+			}
+
+			var owner = new MetadataToken(TokenType.GenericParam, ReadTableIndex (Table.GenericParam));
+			var type = ReadMetadataToken (CodedIndex.TypeDefOrRef);
+
+			return Tuple.Create (owner, type);
+		}
+
+
 		void InitializeGenericParameters ()
 		{
 			if (metadata.GenericParameters != null)
@@ -2266,7 +2298,7 @@ namespace Mono.Cecil {
 			return metadata.GetMethodDefinition (rid);
 		}
 
-		MethodSpecification GetMethodSpecification (uint rid)
+		internal MethodSpecification GetMethodSpecification (uint rid)
 		{
 			if (!MoveTo (Table.MethodSpec, rid))
 				return null;

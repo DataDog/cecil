@@ -753,18 +753,6 @@ namespace Mono.Cecil {
 			return Read (this, (_, reader) => reader.GetMemberReferences ());
 		}
 
-		public int ReadStandAloneSigs ()
-		{
-			//Read all the method bodies
-			foreach (var type in assembly.MainModule.Types) {
-				foreach (var method in type.Methods) {
-					_ = method.Body;
-				}
-			}
-
-			return MetadataSystem.StandAloneSigs.Count;
-		}
-
 		public int ReadBlob ()
 		{
 			var heap = Image.BlobHeap;
@@ -772,13 +760,16 @@ namespace Mono.Cecil {
 				return 0;
 			}
 
-			uint index = 0;
+			BlobHeapBuffer indexCalculator = new BlobHeapBuffer ();
+
+			uint index = 1;
 			while (true) {
 				byte [] buffer = heap.Read (index);
-				if(index > 0 && (buffer is null || buffer.Length == 0)) {
+				if (buffer is null || buffer.Length == 0) {
 					break;
 				}
-				index += (uint)buffer.Length + 1;
+				indexCalculator.GetBlobIndex (new ByteBuffer (buffer));
+				index = (uint)indexCalculator.position;
 			}
 
 			return heap.Blobs.Count;
@@ -791,12 +782,88 @@ namespace Mono.Cecil {
 				return 0;
 			}
 
-			foreach(var userString in heap.Strings) {
-				_ = AddRaw(userString.Value);
+			UserStringHeapBuffer indexCalculator = new UserStringHeapBuffer ();
+
+			//foreach(var userString in heap.Strings) {
+			uint index = 1;
+			while (true) {
+				var userString = heap.Read (index);
+				if(userString is null || userString.Length == 0) {
+					break;
+				}
+				_ = AddRaw(userString);
+				indexCalculator.GetStringIndex (userString);
+				index = (uint)indexCalculator.position;
 			}
 
 			return MetadataSystem.UserStrings.Count;
 		}
+
+		public int ReadTypeSpecs ()
+		{
+			if (Image.HasTable (Table.TypeSpec)) {
+				var len = Image.GetTableLength (Table.TypeSpec);
+				for (uint riid = 1; riid <= len; riid++) {
+					var spec = reader.GetTypeSpecification (riid);
+					MetadataSystem.TypeSpecs [riid] = spec;
+				}
+			}
+
+			return MetadataSystem.TypeSpecs.Count;
+		}
+
+		public int ReadMethodSpecs ()
+		{
+			if (Image.HasTable (Table.TypeSpec)) {
+				var len = Image.GetTableLength (Table.MethodSpec);
+				for (uint riid = 1; riid <= len; riid++) {
+					var spec = reader.GetMethodSpecification (riid);
+					MetadataSystem.MethodSpecs [riid] = spec;
+				}
+			}
+
+			return MetadataSystem.MethodSpecs.Count;
+		}
+
+		public int ReadGenericParameters ()
+		{
+			if (Image.HasTable (Table.GenericParam)) {
+				var len = Image.GetTableLength (Table.GenericParam);
+				for (uint riid = 1; riid <= len; riid++) {
+					var param = reader.ReadRawGenericParameter(riid);
+					MetadataSystem.GenericParams [new MetadataToken(TokenType.GenericParam, riid)] = param;
+				}
+			}
+
+			return MetadataSystem.GenericParams.Count;
+		}
+
+		public int ReadGenericParameterContraints ()
+		{
+			if (Image.HasTable (Table.GenericParamConstraint)) {
+				var len = Image.GetTableLength (Table.GenericParamConstraint);
+				for (uint riid = 1; riid <= len; riid++) {
+					var param = reader.ReadRawGenericParameterConstraint(riid);
+					MetadataSystem.GenericParamConstraints [new MetadataToken(TokenType.GenericParamConstraint, riid)] = param;
+				}
+			}
+
+			return MetadataSystem.GenericParamConstraints.Count;
+		}
+
+
+		public int ReadStandAloneSigs ()
+		{
+			//Read all the method bodies
+			foreach (var type in assembly.MainModule.Types) {
+				foreach (var method in type.Methods) {
+					_ = method.Body;
+				}
+			}
+
+			return MetadataSystem.StandAloneSigs.Count;
+		}
+
 
 		public IEnumerable<CustomAttribute> GetCustomAttributes ()
 		{

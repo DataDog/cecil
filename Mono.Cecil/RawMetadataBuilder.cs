@@ -1,5 +1,6 @@
 ﻿using Mono.Cecil.Cil;
 using Mono.Cecil.Metadata;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using BlobIndex = System.UInt32;
@@ -11,6 +12,8 @@ using StringIndex = System.UInt32;
 
 namespace Mono.Cecil.Mono.Cecil {
 	using TypeRefRow = Row<CodedRID, StringIndex, StringIndex>;
+	using GenericParamRow = Row<ushort, GenericParameterAttributes, CodedRID, StringIndex>;
+	using GenericParamConstraintRow = Row<RID, CodedRID>;
 
 	class RawMetadataBuilder : MetadataBuilder {
 		public RawMetadataBuilder (ModuleDefinition module, string fq_name, uint timestamp, ISymbolWriterProvider symbol_writer_provider)
@@ -76,6 +79,11 @@ namespace Mono.Cecil.Mono.Cecil {
 			return module.GetMemberReferences().OrderBy (i => i.MetadataToken.ToUInt32 ()).ToList ();
 		}
 
+		List<KeyValuePair<uint, TypeReference>> GetAllTypeSpecsSorted ()
+		{
+			return module.MetadataSystem.TypeSpecs.OrderBy (i => i.Key).ToList ();
+		}
+
 		List<KeyValuePair<MetadataToken, byte[]>> GetAllStandaloneSigsSorted ()
 		{ 
 			return module.MetadataSystem.StandAloneSigs.OrderBy (i => i.Key.ToUInt32 ()).ToList();
@@ -119,6 +127,15 @@ namespace Mono.Cecil.Mono.Cecil {
 			foreach (var typeRef in GetAllMemberRefsSorted ())
 				GetMemberRefToken (typeRef);
 
+			foreach(var genericParam in module.MetadataSystem.GenericParams.OrderBy(r => r.Key.ToUInt32()))
+				AddRawGenericParam (genericParam.Value);
+
+			foreach (var genericParamConstraint in module.MetadataSystem.GenericParamConstraints.OrderBy (r => r.Key.ToUInt32 ()))
+				AddRawGenericParamConstraint (genericParamConstraint.Value);
+
+			foreach (var spec in GetAllTypeSpecsSorted ())
+				AddTypeSpecification (spec.Value, spec.Key);
+
 			foreach (var field in GetAllFieldsSorted ())
 				AddField (field);
 
@@ -127,6 +144,33 @@ namespace Mono.Cecil.Mono.Cecil {
 
 			foreach (var type in GetAllTypesSorted ())
 				AddType (type);
+		}
+
+		private void AddRawGenericParam (Tuple<int, GenericParameterAttributes, MetadataToken, string> values)
+		{
+			var generic_param_table = GetTable<GenericParamTable> (Table.GenericParam);
+			var rid = generic_param_table.AddRow (new GenericParamRow (
+				(ushort)values.Item1,
+				values.Item2,
+				MakeCodedRID (values.Item3, CodedIndex.TypeOrMethodDef),
+				GetStringIndex (values.Item4)));
+		}
+
+		private void AddRawGenericParamConstraint (Tuple<MetadataToken, MetadataToken> values)
+		{
+			var generic_param_table = GetTable<GenericParamConstraintTable> (Table.GenericParamConstraint);
+			var rid = generic_param_table.AddRow (new GenericParamConstraintRow (
+				values.Item1.RID,
+				MakeCodedRID (values.Item2, CodedIndex.TypeDefOrRef)));
+		}
+
+		protected override RVA GetGenericParameterRiid (int number, GenericParameterAttributes attributes, MetadataToken owner, string name) 
+		{
+			return module.MetadataSystem.GenericParams.FirstOrDefault(r => r.Value.Item1 == number && r.Value.Item2 == attributes && r.Value.Item3 == owner && r.Value.Item4 == name).Key.ToUInt32();
+		}
+		protected override RVA AddGenericParameterConstraintRiid (MetadataToken owner, MetadataToken type)
+		{
+			return module.MetadataSystem.GenericParamConstraints.FirstOrDefault (r => r.Value.Item1 == owner && r.Value.Item2 == type).Key.ToUInt32 ();
 		}
 
 		protected override void AddNestedTypes (TypeDefinition type)

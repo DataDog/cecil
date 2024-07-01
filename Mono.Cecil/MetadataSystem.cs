@@ -65,6 +65,11 @@ namespace Mono.Cecil {
 		internal Dictionary<uint, uint> StateMachineMethods;
 		internal Dictionary<MetadataToken, Row<Guid, uint, uint> []> CustomDebugInformations;
 
+
+		internal Dictionary<uint, TypeReference> TypeSpecs = new Dictionary<uint, TypeReference> ();
+		internal Dictionary<uint, MethodSpecification> MethodSpecs = new Dictionary<uint, MethodSpecification> ();
+		internal Dictionary<MetadataToken, Tuple<int, GenericParameterAttributes, MetadataToken, string>> GenericParams = new System.Collections.Generic.Dictionary<MetadataToken, Tuple<int, GenericParameterAttributes, MetadataToken, string>> ();
+		internal Dictionary<MetadataToken, Tuple<MetadataToken, MetadataToken>> GenericParamConstraints = new System.Collections.Generic.Dictionary<MetadataToken, Tuple<MetadataToken, MetadataToken>> ();
 		internal Dictionary<MetadataToken, byte []> StandAloneSigs = new Dictionary<MetadataToken, byte []>();
 		internal Dictionary<uint, string> UserStrings = new Dictionary<uint, string> ();
 		internal UserStringHeapBuffer UserStringsHeap = new UserStringHeapBuffer ();
