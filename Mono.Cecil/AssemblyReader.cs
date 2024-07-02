@@ -166,6 +166,23 @@ namespace Mono.Cecil {
 
 		public void ReadModule (ModuleDefinition module, bool resolve_attributes, MetadataReader reader = null)
 		{
+			if (module.ReadingMode == ReadingMode.Immediate) {
+				//Preload all values
+				_ = module.ReadBlob ();
+				_ = module.ReadUserStrings ();
+
+				_ = module.ReadGenericParameters ();
+				_ = module.ReadGenericParameterContraints ();
+
+				_ = module.ReadTypeSpecs ();
+				_ = module.ReadMethodSpecs ();
+
+				_ = module.GetTypeReferences (true);
+				_ = module.GetMemberReferences (true);
+				_ = module.ModuleReferences;
+				_ = module.ReadStandAloneSigs ();
+			}
+
 			this.resolve_attributes = resolve_attributes;
 
 			if (module.HasAssemblyReferences)
@@ -188,20 +205,6 @@ namespace Mono.Cecil {
 			ReadCustomAttributes (assembly);
 			ReadSecurityDeclarations (assembly);
 
-			if (module.ReadingMode == ReadingMode.Immediate) {
-				//Preload all values
-				_ = module.ReadBlob ();
-				_ = module.ReadUserStrings ();
-				_ = module.ReadGenericParameters ();
-				_ = module.ReadGenericParameterContraints ();
-
-				_ = module.GetTypeReferences (true);
-				_ = module.GetMemberReferences (true);
-				_ = module.ModuleReferences;
-				_ = module.ReadTypeSpecs ();
-				_ = module.ReadMethodSpecs ();
-				_ = module.ReadStandAloneSigs ();
-			}
 		}
 
 		void ReadTypes (Collection<TypeDefinition> types)
@@ -1214,10 +1217,13 @@ namespace Mono.Cecil {
 			if (!MoveTo (Table.TypeSpec, rid))
 				return null;
 
-			var reader = ReadSignature (ReadBlobIndex ());
-			var type = reader.ReadTypeSignature ();
+			var blobIndex = ReadBlobIndex ();
+			var reader = ReadSignature (blobIndex);
+			var type = reader.ReadTypeSignature (out var rawSignature);
 			if (type.token.RID == 0)
 				type.token = new MetadataToken (TokenType.TypeSpec, rid);
+
+			type.RawSignature = rawSignature;
 
 			return type;
 		}
@@ -2307,16 +2313,18 @@ namespace Mono.Cecil {
 				ReadMetadataToken (CodedIndex.MethodDefOrRef));
 			var signature = ReadBlobIndex ();
 
-			var method_spec = ReadMethodSpecSignature (signature, element_method);
+			var method_spec = ReadMethodSpecSignature (signature, element_method, out var rawSignature);
 			method_spec.token = new MetadataToken (TokenType.MethodSpec, rid);
+			method_spec.RawSignature = rawSignature;
 			return method_spec;
 		}
 
-		MethodSpecification ReadMethodSpecSignature (uint signature, MethodReference method)
+		MethodSpecification ReadMethodSpecSignature (uint signature, MethodReference method, out byte [] rawSignature)
 		{
 			var reader = ReadSignature (signature);
 			const byte methodspec_sig = 0x0a;
 
+			var pos = reader.position;
 			var call_conv = reader.ReadByte ();
 
 			if (call_conv != methodspec_sig)
@@ -2327,6 +2335,10 @@ namespace Mono.Cecil {
 			var instance = new GenericInstanceMethod (method, (int) arity);
 
 			reader.ReadGenericInstanceSignature (method, instance, arity);
+
+			var len = reader.position - pos;
+			reader.position = pos;
+			rawSignature = reader.ReadBytes (len);
 
 			return instance;
 		}
@@ -3382,8 +3394,10 @@ namespace Mono.Cecil {
 
 			var instance_arguments = instance.GenericArguments;
 
-			for (int i = 0; i < arity; i++)
-				instance_arguments.Add (ReadTypeSignature ());
+			for (int i = 0; i < arity; i++) {
+				instance_arguments.Add (ReadTypeSignature (out var rawsignature));
+				instance_arguments [i].RawSignature = rawsignature;
+			}
 		}
 
 		ArrayType ReadArrayTypeSignature ()
@@ -3424,7 +3438,19 @@ namespace Mono.Cecil {
 
 		public TypeReference ReadTypeSignature ()
 		{
-			return ReadTypeSignature ((ElementType) ReadByte ());
+			return ReadTypeSignature (out _);
+		}
+
+		public TypeReference ReadTypeSignature (out byte [] rawSignature)
+		{
+			var pos = position;
+
+			var res = ReadTypeSignature ((ElementType)ReadByte ());
+
+			var len = position - pos;
+			position = pos;
+			rawSignature = ReadBytes (len);
+			return res;
 		}
 
 		public TypeReference ReadTypeToken ()

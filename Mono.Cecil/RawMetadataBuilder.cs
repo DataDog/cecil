@@ -14,6 +14,8 @@ namespace Mono.Cecil.Mono.Cecil {
 	using TypeRefRow = Row<CodedRID, StringIndex, StringIndex>;
 	using GenericParamRow = Row<ushort, GenericParameterAttributes, CodedRID, StringIndex>;
 	using GenericParamConstraintRow = Row<RID, CodedRID>;
+	using MethodSpecRow = Row<CodedRID, BlobIndex>;
+	using NestedClassRow = Row<RID, RID>;
 
 	class RawMetadataBuilder : MetadataBuilder {
 		public RawMetadataBuilder (ModuleDefinition module, string fq_name, uint timestamp, ISymbolWriterProvider symbol_writer_provider)
@@ -32,10 +34,6 @@ namespace Mono.Cecil.Mono.Cecil {
 		List<TypeDefinition> GetAllTypesSorted ()
 		{
 			var res = new List<TypeDefinition> (module.MetadataSystem.Types);
-			foreach (var type in module.Types) {
-				if (type.HasNestedTypes)
-					res.AddRange (type.NestedTypes);
-			}
 
 			res = res.OrderBy (i => i.MetadataToken.ToUInt32 ()).ToList ();
 			
@@ -79,9 +77,9 @@ namespace Mono.Cecil.Mono.Cecil {
 			return module.GetMemberReferences().OrderBy (i => i.MetadataToken.ToUInt32 ()).ToList ();
 		}
 
-		List<KeyValuePair<uint, TypeReference>> GetAllTypeSpecsSorted ()
+		List<KeyValuePair<uint, MethodSpecification>> GetAllMethodSpecsSorted ()
 		{
-			return module.MetadataSystem.TypeSpecs.OrderBy (i => i.Key).ToList ();
+			return module.MetadataSystem.MethodSpecs.OrderBy (i => i.Key).ToList ();
 		}
 
 		List<KeyValuePair<MetadataToken, byte[]>> GetAllStandaloneSigsSorted ()
@@ -121,20 +119,23 @@ namespace Mono.Cecil.Mono.Cecil {
 			foreach (var sig in GetAllUserStringsSorted ())
 				user_string_heap.GetStringIndex (sig.Value);
 
-			foreach (var typeRef in GetAllTypeRefsSorted ())
-				GetTypeRefToken (typeRef);
+			foreach (var spec in module.MetadataSystem.TypeSpecs.OrderBy (i => i.Key).ToList ())
+				AddRawTypeSpecification (spec.Value, spec.Key);
 
-			foreach (var typeRef in GetAllMemberRefsSorted ())
-				GetMemberRefToken (typeRef);
+			foreach (var spec in module.MetadataSystem.MethodSpecs.OrderBy (i => i.Key).ToList ())
+				AddRawMethodSpecification (spec.Value, spec.Key);
 
-			foreach(var genericParam in module.MetadataSystem.GenericParams.OrderBy(r => r.Key.ToUInt32()))
+			foreach (var genericParam in module.MetadataSystem.GenericParams.OrderBy(r => r.Key.ToUInt32()))
 				AddRawGenericParam (genericParam.Value);
 
 			foreach (var genericParamConstraint in module.MetadataSystem.GenericParamConstraints.OrderBy (r => r.Key.ToUInt32 ()))
 				AddRawGenericParamConstraint (genericParamConstraint.Value);
 
-			foreach (var spec in GetAllTypeSpecsSorted ())
-				AddTypeSpecification (spec.Value, spec.Key);
+			foreach (var typeRef in GetAllTypeRefsSorted ())
+				GetTypeRefToken (typeRef);
+
+			foreach (var typeRef in GetAllMemberRefsSorted ())
+				GetMemberRefToken (typeRef);
 
 			foreach (var field in GetAllFieldsSorted ())
 				AddField (field);
@@ -144,6 +145,22 @@ namespace Mono.Cecil.Mono.Cecil {
 
 			foreach (var type in GetAllTypesSorted ())
 				AddType (type);
+		}
+
+		private void AddRawTypeSpecification (TypeReference spec, uint id)
+		{
+			var sig = GetBlobIndex( new SignatureWriter (spec.RawSignature));
+			AddTypeSpecification (spec, sig);
+		}
+
+		private void AddRawMethodSpecification (MethodSpecification spec, uint id)
+		{
+			var sig = GetBlobIndex (new SignatureWriter (spec.RawSignature));
+			var row = new MethodSpecRow (
+				MakeCodedRID (spec.ElementMethod.MetadataToken, CodedIndex.MethodDefOrRef),
+				sig);
+
+			AddMethodSpecification (spec, row);
 		}
 
 		private void AddRawGenericParam (Tuple<int, GenericParameterAttributes, MetadataToken, string> values)
@@ -175,8 +192,15 @@ namespace Mono.Cecil.Mono.Cecil {
 
 		protected override void AddNestedTypes (TypeDefinition type)
 		{
-			// Nested types are written in add order
+			var nested_types = type.NestedTypes;
+			var nested_table = GetTable<NestedClassTable> (Table.NestedClass);
+
+			for (int i = 0; i < nested_types.Count; i++) {
+				var nested = nested_types [i];
+				nested_table.AddRow (new NestedClassRow (nested.token.RID, type.token.RID));
+			}
 		}
+
 		protected override MetadataToken AddTypeReference (TypeReference type, TypeRefRow row)
 		{
 			type.token = new MetadataToken (TokenType.TypeRef, type_ref_table.AddRow (row));
