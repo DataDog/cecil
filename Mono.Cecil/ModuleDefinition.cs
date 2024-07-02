@@ -283,15 +283,24 @@ namespace Mono.Cecil {
 
 		#region RAW methods
 
+		public bool IsDirty {
+			get;
+			internal set;
+		} = false;
+
 		public MetadataToken AddRaw (string userString)
 		{
+			IsDirty = true;
+
 			var offset = MetadataSystem.UserStringsHeap.GetStringIndex(userString);
 			MetadataSystem.UserStrings [offset] = userString;
 			return new MetadataToken (offset);
 		}
 
 		public MetadataToken AddRaw (byte [] signature)
-		{ 
+		{
+			IsDirty = true;
+
 			var token = new MetadataToken (TokenType.Signature, MetadataSystem.StandAloneSigs.Count + 1);
 			MetadataSystem.StandAloneSigs[token] = signature;
 			return token;
@@ -299,6 +308,8 @@ namespace Mono.Cecil {
 
 		public ModuleReference AddRaw (ModuleReference value)
 		{
+			IsDirty = true;
+
 			value.MetadataToken = new MetadataToken (TokenType.ModuleRef, MetadataSystem.ModuleReferences.Length + 1);
 			var values = MetadataSystem.ModuleReferences.ToList ();
 			values.Add (value);
@@ -309,6 +320,8 @@ namespace Mono.Cecil {
 
 		public TypeDefinition AddRaw (TypeDefinition value)
 		{
+			IsDirty = true;
+
 			value.MetadataToken = new MetadataToken (TokenType.TypeDef, MetadataSystem.Types.Length + 1);
 			var values = MetadataSystem.Types.ToList ();
 			values.Add (value);
@@ -318,6 +331,8 @@ namespace Mono.Cecil {
 
 		public FieldDefinition AddRaw (FieldDefinition value)
 		{
+			IsDirty = true;
+
 			value.MetadataToken = new MetadataToken (TokenType.Field, MetadataSystem.Fields.Length + 1);
 			var values = MetadataSystem.Fields.ToList ();
 			values.Add (value);
@@ -328,6 +343,8 @@ namespace Mono.Cecil {
 
 		public MethodDefinition AddRaw (MethodDefinition value)
 		{
+			IsDirty = true;
+
 			value.MetadataToken = new MetadataToken (TokenType.Method, MetadataSystem.Methods.Length + 1);
 			var values = MetadataSystem.Methods.ToList ();
 			values.Add (value);
@@ -338,6 +355,8 @@ namespace Mono.Cecil {
 
 		public TypeReference AddRaw (TypeReference value)
 		{
+			IsDirty = true;
+
 			value.MetadataToken = new MetadataToken (TokenType.TypeRef, MetadataSystem.TypeReferences.Length + 1);
 			var values = MetadataSystem.TypeReferences.ToList ();
 			values.Add(value);
@@ -347,6 +366,8 @@ namespace Mono.Cecil {
 
 		public MemberReference AddRaw (MemberReference value)
 		{
+			IsDirty = true;
+
 			value.MetadataToken = new MetadataToken (TokenType.MemberRef, MetadataSystem.MemberReferences.Length + 1);
 			var values = MetadataSystem.MemberReferences.ToList ();
 			values.Add (value);

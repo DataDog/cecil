@@ -205,6 +205,7 @@ namespace Mono.Cecil {
 			ReadCustomAttributes (assembly);
 			ReadSecurityDeclarations (assembly);
 
+			module.IsDirty = false;
 		}
 
 		void ReadTypes (Collection<TypeDefinition> types)
