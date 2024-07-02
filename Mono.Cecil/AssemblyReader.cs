@@ -3340,6 +3340,16 @@ namespace Mono.Cecil {
 			this.start = (uint) this.position;
 		}
 
+		public SignatureReader (byte [] data, MetadataReader reader)
+			: base (data)
+		{
+			this.reader = reader;
+			this.position = 0;
+			this.sig_length = (uint)data.Length;
+			this.start = (uint)this.position;
+		}
+
+
 		MetadataToken ReadTypeTokenSignature ()
 		{
 			return CodedIndex.TypeDefOrRef.GetMetadataToken (ReadCompressedUInt32 ());

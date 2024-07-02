@@ -294,7 +294,7 @@ namespace Mono.Cecil {
 
 			var offset = MetadataSystem.UserStringsHeap.GetStringIndex(userString);
 			MetadataSystem.UserStrings [offset] = userString;
-			return new MetadataToken (offset);
+			return new MetadataToken (TokenType.String, offset);
 		}
 
 		public MetadataToken AddRaw (byte [] signature)
@@ -344,6 +344,11 @@ namespace Mono.Cecil {
 		public MethodDefinition AddRaw (MethodDefinition value)
 		{
 			IsDirty = true;
+
+			if (value.RawSignature != null && value.RawSignature.Length > 0) {
+				var signatureReader = new SignatureReader (value.RawSignature, reader);
+				signatureReader.ReadMethodSignature (value);
+			}
 
 			value.MetadataToken = new MetadataToken (TokenType.Method, MetadataSystem.Methods.Length + 1);
 			var values = MetadataSystem.Methods.ToList ();

@@ -76,6 +76,10 @@ namespace Mono.Cecil.Cil {
 		RVA WriteRawBody (MethodDefinition method)
 		{
 			var raw_body = method.Body.RawBody;
+			var fat_header = (raw_body [0] & 0x3) == 0x3;
+			if (fat_header)
+				Align (4);
+
 			var rva = BeginMethod ();
 			WriteBytes (raw_body);
 			return rva;
