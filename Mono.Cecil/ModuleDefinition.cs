@@ -890,6 +890,15 @@ namespace Mono.Cecil {
 			return MetadataSystem.StandAloneSigs.Count;
 		}
 
+		public byte [] GetSignature(MetadataToken token)
+		{
+			if (token.TokenType == TokenType.Signature && MetadataSystem.StandAloneSigs.TryGetValue(token, out byte [] signature)) {
+				return signature;
+			}
+
+			return null;
+		}
+
 
 		public IEnumerable<CustomAttribute> GetCustomAttributes ()
 		{
