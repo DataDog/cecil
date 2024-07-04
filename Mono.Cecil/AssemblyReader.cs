@@ -169,6 +169,7 @@ namespace Mono.Cecil {
 			if (module.ReadingMode == ReadingMode.Immediate) {
 				//Preload all values
 				_ = module.ReadBlob ();
+				_ = module.ReadStandAloneSigs ();
 				_ = module.ReadUserStrings ();
 
 				_ = module.ReadGenericParameters ();
@@ -180,7 +181,6 @@ namespace Mono.Cecil {
 				_ = module.GetTypeReferences (true);
 				_ = module.GetMemberReferences (true);
 				_ = module.ModuleReferences;
-				_ = module.ReadStandAloneSigs ();
 			}
 
 			this.resolve_attributes = resolve_attributes;
@@ -503,7 +503,7 @@ namespace Mono.Cecil {
 				return ReadUInt16 ();
 		}
 
-		byte [] ReadBlob ()
+		internal byte [] ReadBlob ()
 		{
 			var blob_heap = image.BlobHeap;
 			if (blob_heap == null) {
@@ -523,7 +523,7 @@ namespace Mono.Cecil {
 			return blob_heap.Read (signature);
 		}
 
-		uint ReadBlobIndex ()
+		internal uint ReadBlobIndex ()
 		{
 			var blob_heap = image.BlobHeap;
 			return ReadByIndexSize (blob_heap != null ? blob_heap.IndexSize : 2);
@@ -575,7 +575,7 @@ namespace Mono.Cecil {
 			return (int) info.Length;
 		}
 
-		bool MoveTo (Table table, uint row)
+		internal bool MoveTo (Table table, uint row)
 		{
 			var info = image.TableHeap [table];
 			var length = info.Length;
@@ -3591,6 +3591,29 @@ namespace Mono.Cecil {
 				Buffer.BlockCopy (buffer, initialOffset, res, 0, res.Length);
 				return res;
 			}
+		}
+
+		public MethodSpecification ReadMethodSpecification(MethodReference method)
+		{
+			const byte methodspec_sig = 0x0a;
+
+			var pos = position;
+			var call_conv = ReadByte ();
+
+			if (call_conv != methodspec_sig)
+				throw new NotSupportedException ();
+
+			var arity = ReadCompressedUInt32 ();
+
+			var instance = new GenericInstanceMethod (method, (int)arity);
+
+			ReadGenericInstanceSignature (method, instance, arity);
+
+			var len = position - pos;
+			position = pos;
+			instance.RawSignature = ReadBytes (len);
+
+			return instance;
 		}
 
 		public object ReadConstantSignature (ElementType type)

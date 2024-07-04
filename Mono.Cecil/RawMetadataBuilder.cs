@@ -112,7 +112,7 @@ namespace Mono.Cecil.Mono.Cecil {
 		protected override void AddTypes ()
 		{
 			foreach (var sig in GetAllStandaloneSigsSorted ()) {
-				var rva = GetBlobIndex (new SignatureWriter (sig.Value));
+				var rva = GetBlobIndex (sig.Value);
 				AddStandAloneSignature (rva);
 			}
 

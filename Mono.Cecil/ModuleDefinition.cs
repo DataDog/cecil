@@ -306,6 +306,47 @@ namespace Mono.Cecil {
 			return token;
 		}
 
+		public TypeReference AddRawTypeSpec (byte [] signature)
+		{ 
+			var found = MetadataSystem.TypeSpecs.FirstOrDefault(x => x.Value.RawSignature.SequenceEqual(signature)).Value;
+			if(found != null) {
+				return found;
+			}
+
+			IsDirty = true;
+
+			var signatureReader = new SignatureReader (signature, reader);
+			var type = signatureReader.ReadTypeSignature ();
+			type.RawSignature = signature;
+			if (type.token.RID == 0) {
+				type.token = new MetadataToken (TokenType.TypeSpec, MetadataSystem.TypeSpecs.Count + 1);
+			}
+			MetadataSystem.TypeSpecs [type.MetadataToken.RID] = type;
+
+			return type;
+		}
+				
+		public MethodSpecification AddRawMethodSpec (MethodReference parent, byte [] signature)
+		{ 
+			var found = MetadataSystem.MethodSpecs.FirstOrDefault(x => x.Value.ElementMethod.MetadataToken == parent.MetadataToken && x.Value.RawSignature.SequenceEqual(signature)).Value;
+			if(found != null) {
+				return found;
+			}
+
+			IsDirty = true;
+
+			var signatureReader = new SignatureReader (signature, reader);
+			var method = signatureReader.ReadMethodSpecification(parent);
+			method.RawSignature = signature;
+			if (method.token.RID == 0) {
+				method.token = new MetadataToken (TokenType.MethodSpec, MetadataSystem.MethodSpecs.Count + 1);
+			}
+
+			MetadataSystem.MethodSpecs [method.MetadataToken.RID] = method;
+
+			return method;
+		}
+
 		public ModuleReference AddRaw (ModuleReference value)
 		{
 			IsDirty = true;
@@ -384,6 +425,15 @@ namespace Mono.Cecil {
 		{
 			MetadataSystem.UserStrings.TryGetValue(token.RID, out string text);
 			return text;
+		}
+
+		public TypeReference GetTypeSpec (MetadataToken token)
+		{
+			if(MetadataSystem.TypeSpecs.TryGetValue(token.RID, out TypeReference type)) {
+				return type;
+			}
+
+			return null;
 		}
 
 		#endregion
@@ -801,6 +851,22 @@ namespace Mono.Cecil {
 			return heap.Blobs.Count;
 		}
 
+		public int ReadStandAloneSigs ()
+		{
+			if (Image.HasTable (Table.StandAloneSig)) {
+				var len = Image.GetTableLength (Table.StandAloneSig);
+				for (uint rid = 1; rid <= len; rid++) { 
+					if (reader.MoveTo (Table.StandAloneSig, rid)) {
+						var sig = reader.ReadBlob ();
+						MetadataSystem.StandAloneSigs [new MetadataToken (TokenType.Signature, rid)] = sig;
+					}
+				}
+
+			}
+
+			return MetadataSystem.StandAloneSigs.Count;
+		}
+
 		public int ReadUserStrings ()
 		{
 			var heap = Image.UserStringHeap;
@@ -810,7 +876,6 @@ namespace Mono.Cecil {
 
 			UserStringHeapBuffer indexCalculator = new UserStringHeapBuffer ();
 
-			//foreach(var userString in heap.Strings) {
 			uint index = 1;
 			while (true) {
 				var userString = heap.Read (index);
@@ -875,19 +940,6 @@ namespace Mono.Cecil {
 			}
 
 			return MetadataSystem.GenericParamConstraints.Count;
-		}
-
-
-		public int ReadStandAloneSigs ()
-		{
-			//Read all the method bodies
-			foreach (var type in assembly.MainModule.Types) {
-				foreach (var method in type.Methods) {
-					_ = method.Body;
-				}
-			}
-
-			return MetadataSystem.StandAloneSigs.Count;
 		}
 
 		public byte [] GetSignature(MetadataToken token)
