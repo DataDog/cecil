@@ -18,6 +18,8 @@ namespace Mono.Cecil {
 
 		bool HasGenericArguments { get; }
 		Collection<TypeReference> GenericArguments { get; }
+
+		byte [] RawSignature { get; set; }
 	}
 
 	static partial class Mixin {

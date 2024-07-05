@@ -18,12 +18,15 @@ using Mono.Cecil.Cil;
 using Mono.Cecil.Metadata;
 using Mono.Cecil.PE;
 using Mono.Collections.Generic;
+using System.Reflection;
+using System.Linq;
+using System.Security.Cryptography;
 
 namespace Mono.Cecil {
 
 	public enum ReadingMode {
 		Immediate = 1,
-		Deferred = 2,
+		Deferred = 2
 	}
 
 	public sealed class ReaderParameters {
@@ -227,6 +230,8 @@ namespace Mono.Cecil {
 		}
 
 		public bool DeterministicMvid { get; set; }
+
+		public bool Raw { get; set; }
 	}
 
 	public sealed class ModuleDefinition : ModuleReference, ICustomAttributeProvider, ICustomDebugInformationProvider, IDisposable {
@@ -275,6 +280,163 @@ namespace Mono.Cecil {
 		internal Collection<CustomDebugInformation> custom_infos;
 
 		internal MetadataBuilder metadata_builder;
+
+		#region RAW methods
+
+		public bool IsDirty {
+			get;
+			internal set;
+		} = false;
+
+		public MetadataToken AddRaw (string userString)
+		{
+			IsDirty = true;
+
+			var offset = MetadataSystem.UserStringsHeap.GetStringIndex(userString);
+			MetadataSystem.UserStrings [offset] = userString;
+			return new MetadataToken (TokenType.String, offset);
+		}
+
+		public MetadataToken AddRaw (byte [] signature)
+		{
+			IsDirty = true;
+
+			var token = new MetadataToken (TokenType.Signature, MetadataSystem.StandAloneSigs.Count + 1);
+			MetadataSystem.StandAloneSigs[token] = signature;
+			return token;
+		}
+
+		public TypeReference AddRawTypeSpec (byte [] signature)
+		{ 
+			var found = MetadataSystem.TypeSpecs.FirstOrDefault(x => x.Value.RawSignature.SequenceEqual(signature)).Value;
+			if(found != null) {
+				return found;
+			}
+
+			IsDirty = true;
+
+			var signatureReader = new SignatureReader (signature, reader);
+			var type = signatureReader.ReadTypeSignature ();
+			type.RawSignature = signature;
+			if (type.token.RID == 0) {
+				type.token = new MetadataToken (TokenType.TypeSpec, MetadataSystem.TypeSpecs.Count + 1);
+			}
+			MetadataSystem.TypeSpecs [type.MetadataToken.RID] = type;
+
+			return type;
+		}
+				
+		public MethodSpecification AddRawMethodSpec (MethodReference parent, byte [] signature)
+		{ 
+			var found = MetadataSystem.MethodSpecs.FirstOrDefault(x => x.Value.ElementMethod.MetadataToken == parent.MetadataToken && x.Value.RawSignature.SequenceEqual(signature)).Value;
+			if(found != null) {
+				return found;
+			}
+
+			IsDirty = true;
+
+			var signatureReader = new SignatureReader (signature, reader);
+			var method = signatureReader.ReadMethodSpecification(parent);
+			method.RawSignature = signature;
+			if (method.token.RID == 0) {
+				method.token = new MetadataToken (TokenType.MethodSpec, MetadataSystem.MethodSpecs.Count + 1);
+			}
+
+			MetadataSystem.MethodSpecs [method.MetadataToken.RID] = method;
+
+			return method;
+		}
+
+		public ModuleReference AddRaw (ModuleReference value)
+		{
+			IsDirty = true;
+
+			value.MetadataToken = new MetadataToken (TokenType.ModuleRef, MetadataSystem.ModuleReferences.Length + 1);
+			var values = MetadataSystem.ModuleReferences.ToList ();
+			values.Add (value);
+			MetadataSystem.ModuleReferences = values.ToArray ();
+			modules.Add(value);
+			return value;
+		}
+
+		public TypeDefinition AddRaw (TypeDefinition value)
+		{
+			IsDirty = true;
+
+			value.MetadataToken = new MetadataToken (TokenType.TypeDef, MetadataSystem.Types.Length + 1);
+			var values = MetadataSystem.Types.ToList ();
+			values.Add (value);
+			MetadataSystem.Types = values.ToArray ();
+			return value;
+		}
+
+		public FieldDefinition AddRaw (FieldDefinition value)
+		{
+			IsDirty = true;
+
+			value.MetadataToken = new MetadataToken (TokenType.Field, MetadataSystem.Fields.Length + 1);
+			var values = MetadataSystem.Fields.ToList ();
+			values.Add (value);
+			MetadataSystem.Fields = values.ToArray ();
+			value.DeclaringType.Fields.Add (value);
+			return value;
+		}
+
+		public MethodDefinition AddRaw (MethodDefinition value)
+		{
+			IsDirty = true;
+
+			if (value.RawSignature != null && value.RawSignature.Length > 0) {
+				var signatureReader = new SignatureReader (value.RawSignature, reader);
+				signatureReader.ReadMethodSignature (value);
+			}
+
+			value.MetadataToken = new MetadataToken (TokenType.Method, MetadataSystem.Methods.Length + 1);
+			var values = MetadataSystem.Methods.ToList ();
+			values.Add (value);
+			MetadataSystem.Methods = values.ToArray ();
+			value.DeclaringType.Methods.Add (value);
+			return value;
+		}
+
+		public TypeReference AddRaw (TypeReference value)
+		{
+			IsDirty = true;
+
+			value.MetadataToken = new MetadataToken (TokenType.TypeRef, MetadataSystem.TypeReferences.Length + 1);
+			var values = MetadataSystem.TypeReferences.ToList ();
+			values.Add(value);
+			MetadataSystem.TypeReferences = values.ToArray ();
+			return value;
+		}
+
+		public MemberReference AddRaw (MemberReference value)
+		{
+			IsDirty = true;
+
+			value.MetadataToken = new MetadataToken (TokenType.MemberRef, MetadataSystem.MemberReferences.Length + 1);
+			var values = MetadataSystem.MemberReferences.ToList ();
+			values.Add (value);
+			MetadataSystem.MemberReferences = values.ToArray ();
+			return value;
+		}
+
+		public string GetUserString(MetadataToken token)
+		{
+			MetadataSystem.UserStrings.TryGetValue(token.RID, out string text);
+			return text;
+		}
+
+		public TypeReference GetTypeSpec (MetadataToken token)
+		{
+			if(MetadataSystem.TypeSpecs.TryGetValue(token.RID, out TypeReference type)) {
+				return type;
+			}
+
+			return null;
+		}
+
+		#endregion
 
 		public bool IsMain {
 			get { return kind != ModuleKind.NetModule; }
@@ -645,21 +807,150 @@ namespace Mono.Cecil {
 			return Read (new Row<string, string> (scope, fullname), (row, reader) => reader.GetTypeReference (row.Col1, row.Col2));
 		}
 
-		public IEnumerable<TypeReference> GetTypeReferences ()
+		public IEnumerable<TypeReference> GetTypeReferences (bool init = false)
 		{
 			if (!HasImage)
 				return Empty<TypeReference>.Array;
 
+			if (ReadingMode == ReadingMode.Immediate && !init)
+				return MetadataSystem.TypeReferences;
+
 			return Read (this, (_, reader) => reader.GetTypeReferences ());
 		}
 
-		public IEnumerable<MemberReference> GetMemberReferences ()
+		public IEnumerable<MemberReference> GetMemberReferences (bool init = false)
 		{
 			if (!HasImage)
 				return Empty<MemberReference>.Array;
 
+			if (ReadingMode == ReadingMode.Immediate && !init)
+				return MetadataSystem.MemberReferences;
+
 			return Read (this, (_, reader) => reader.GetMemberReferences ());
 		}
+
+		public int ReadBlob ()
+		{
+			var heap = Image.BlobHeap;
+			if (heap is null) {
+				return 0;
+			}
+
+			BlobHeapBuffer indexCalculator = new BlobHeapBuffer ();
+
+			uint index = 1;
+			while (true) {
+				byte [] buffer = heap.Read (index);
+				if (buffer is null || buffer.Length == 0) {
+					break;
+				}
+				indexCalculator.GetBlobIndex (new ByteBuffer (buffer));
+				index = (uint)indexCalculator.position;
+			}
+
+			return heap.Blobs.Count;
+		}
+
+		public int ReadStandAloneSigs ()
+		{
+			if (Image.HasTable (Table.StandAloneSig)) {
+				var len = Image.GetTableLength (Table.StandAloneSig);
+				for (uint rid = 1; rid <= len; rid++) { 
+					if (reader.MoveTo (Table.StandAloneSig, rid)) {
+						var sig = reader.ReadBlob ();
+						MetadataSystem.StandAloneSigs [new MetadataToken (TokenType.Signature, rid)] = sig;
+					}
+				}
+
+			}
+
+			return MetadataSystem.StandAloneSigs.Count;
+		}
+
+		public int ReadUserStrings ()
+		{
+			var heap = Image.UserStringHeap;
+			if (heap is null) {
+				return 0;
+			}
+
+			UserStringHeapBuffer indexCalculator = new UserStringHeapBuffer ();
+
+			uint index = 1;
+			while (true) {
+				var userString = heap.Read (index);
+				if(userString is null || userString.Length == 0) {
+					break;
+				}
+				_ = AddRaw(userString);
+				indexCalculator.GetStringIndex (userString);
+				index = (uint)indexCalculator.position;
+			}
+
+			return MetadataSystem.UserStrings.Count;
+		}
+
+		public int ReadTypeSpecs ()
+		{
+			if (Image.HasTable (Table.TypeSpec)) {
+				var len = Image.GetTableLength (Table.TypeSpec);
+				for (uint riid = 1; riid <= len; riid++) {
+					var spec = reader.GetTypeSpecification (riid);
+					MetadataSystem.TypeSpecs [riid] = spec;
+				}
+			}
+
+			return MetadataSystem.TypeSpecs.Count;
+		}
+
+		public int ReadMethodSpecs ()
+		{
+			if (Image.HasTable (Table.TypeSpec)) {
+				var len = Image.GetTableLength (Table.MethodSpec);
+				for (uint riid = 1; riid <= len; riid++) {
+					var spec = reader.GetMethodSpecification (riid);
+					MetadataSystem.MethodSpecs [riid] = spec;
+				}
+			}
+
+			return MetadataSystem.MethodSpecs.Count;
+		}
+
+		public int ReadGenericParameters ()
+		{
+			if (Image.HasTable (Table.GenericParam)) {
+				var len = Image.GetTableLength (Table.GenericParam);
+				for (uint riid = 1; riid <= len; riid++) {
+					var param = reader.ReadRawGenericParameter(riid);
+					MetadataSystem.GenericParams [new MetadataToken(TokenType.GenericParam, riid)] = param;
+				}
+			}
+
+			return MetadataSystem.GenericParams.Count;
+		}
+
+		public int ReadGenericParameterContraints ()
+		{
+			if (Image.HasTable (Table.GenericParamConstraint)) {
+				var len = Image.GetTableLength (Table.GenericParamConstraint);
+				for (uint riid = 1; riid <= len; riid++) {
+					var param = reader.ReadRawGenericParameterConstraint(riid);
+					MetadataSystem.GenericParamConstraints [new MetadataToken(TokenType.GenericParamConstraint, riid)] = param;
+				}
+			}
+
+			return MetadataSystem.GenericParamConstraints.Count;
+		}
+
+		public byte [] GetSignature(MetadataToken token)
+		{
+			if (token.TokenType == TokenType.Signature && MetadataSystem.StandAloneSigs.TryGetValue(token, out byte [] signature)) {
+				return signature;
+			}
+
+			return null;
+		}
+
 
 		public IEnumerable<CustomAttribute> GetCustomAttributes ()
 		{

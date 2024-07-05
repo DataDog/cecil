@@ -18,6 +18,7 @@ namespace Mono.Cecil {
 	public sealed class FunctionPointerType : TypeSpecification, IMethodSignature {
 
 		readonly MethodReference function;
+		public byte [] RawSignature { get => function.RawSignature; set => function.RawSignature = value; }
 
 		public bool HasThis {
 			get { return function.HasThis; }

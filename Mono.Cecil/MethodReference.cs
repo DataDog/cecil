@@ -159,6 +159,13 @@ namespace Mono.Cecil {
 			this.DeclaringType = declaringType;
 		}
 
+		public MethodReference (string name, byte [] sig, TypeReference declaringType)
+			: base (name)
+		{ 
+			RawSignature = sig;
+			this.DeclaringType = declaringType;
+		}
+
 		public virtual MethodReference GetElementMethod ()
 		{
 			return this;

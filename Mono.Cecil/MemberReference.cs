@@ -20,6 +20,8 @@ namespace Mono.Cecil {
 		internal MetadataToken token;
 		internal object projection;
 
+		public byte [] RawSignature { get; set; }
+
 		public virtual string Name {
 			get { return name; }
 			set {

@@ -83,8 +83,8 @@ namespace Mono.Cecil {
 
 			reader.ReadSymbols (module);
 
-			if (parameters.ReadingMode == ReadingMode.Immediate)
-				module.MetadataSystem.Clear ();
+			// if (parameters.ReadingMode == ReadingMode.Immediate)
+			//	 module.MetadataSystem.Clear ();
 
 			return module;
 		}
@@ -160,12 +160,29 @@ namespace Mono.Cecil {
 		{
 			this.module.Read (this.module, (module, reader) => {
 				ReadModuleManifest (reader);
-				ReadModule (module, resolve_attributes: true);
+				ReadModule (module, resolve_attributes: true, reader);
 			});
 		}
 
-		public void ReadModule (ModuleDefinition module, bool resolve_attributes)
+		public void ReadModule (ModuleDefinition module, bool resolve_attributes, MetadataReader reader = null)
 		{
+			if (module.ReadingMode == ReadingMode.Immediate) {
+				//Preload all values
+				_ = module.ReadBlob ();
+				_ = module.ReadStandAloneSigs ();
+				_ = module.ReadUserStrings ();
+
+				_ = module.ReadGenericParameters ();
+				_ = module.ReadGenericParameterContraints ();
+
+				_ = module.ReadTypeSpecs ();
+				_ = module.ReadMethodSpecs ();
+
+				_ = module.GetTypeReferences (true);
+				_ = module.GetMemberReferences (true);
+				_ = module.ModuleReferences;
+			}
+
 			this.resolve_attributes = resolve_attributes;
 
 			if (module.HasAssemblyReferences)
@@ -187,6 +204,8 @@ namespace Mono.Cecil {
 
 			ReadCustomAttributes (assembly);
 			ReadSecurityDeclarations (assembly);
+
+			module.IsDirty = false;
 		}
 
 		void ReadTypes (Collection<TypeDefinition> types)
@@ -484,7 +503,7 @@ namespace Mono.Cecil {
 				return ReadUInt16 ();
 		}
 
-		byte [] ReadBlob ()
+		internal byte [] ReadBlob ()
 		{
 			var blob_heap = image.BlobHeap;
 			if (blob_heap == null) {
@@ -504,7 +523,7 @@ namespace Mono.Cecil {
 			return blob_heap.Read (signature);
 		}
 
-		uint ReadBlobIndex ()
+		internal uint ReadBlobIndex ()
 		{
 			var blob_heap = image.BlobHeap;
 			return ReadByIndexSize (blob_heap != null ? blob_heap.IndexSize : 2);
@@ -556,7 +575,7 @@ namespace Mono.Cecil {
 			return (int) info.Length;
 		}
 
-		bool MoveTo (Table table, uint row)
+		internal bool MoveTo (Table table, uint row)
 		{
 			var info = image.TableHeap [table];
 			var length = info.Length;
@@ -1194,15 +1213,18 @@ namespace Mono.Cecil {
 			return type_references;
 		}
 
-		TypeReference GetTypeSpecification (uint rid)
+		internal TypeReference GetTypeSpecification (uint rid)
 		{
 			if (!MoveTo (Table.TypeSpec, rid))
 				return null;
 
-			var reader = ReadSignature (ReadBlobIndex ());
-			var type = reader.ReadTypeSignature ();
+			var blobIndex = ReadBlobIndex ();
+			var reader = ReadSignature (blobIndex);
+			var type = reader.ReadTypeSignature (out var rawSignature);
 			if (type.token.RID == 0)
 				type.token = new MetadataToken (TokenType.TypeSpec, rid);
+
+			type.RawSignature = rawSignature;
 
 			return type;
 		}
@@ -1289,11 +1311,13 @@ namespace Mono.Cecil {
 		{
 			var attributes = (FieldAttributes) ReadUInt16 ();
 			var name = ReadString ();
-			var signature = ReadBlobIndex ();
+			var signatureTypeRef = ReadFieldType (ReadBlobIndex (), out var rawSignature);
 
-			var field = new FieldDefinition (name, attributes, ReadFieldType (signature));
+			var field = new FieldDefinition (name, attributes, signatureTypeRef);
 			field.token = new MetadataToken (TokenType.Field, field_rid);
 			metadata.AddFieldDefinition (field);
+
+			field.RawSignature = rawSignature;
 
 			if (IsDeleted (field))
 				return;
@@ -1312,16 +1336,23 @@ namespace Mono.Cecil {
 			metadata.Fields = new FieldDefinition [image.GetTableLength (Table.Field)];
 		}
 
-		TypeReference ReadFieldType (uint signature)
+		TypeReference  ReadFieldType (uint signature, out byte [] rawSignature)
 		{
 			var reader = ReadSignature (signature);
 
+			var position = reader.position;
 			const byte field_sig = 0x6;
 
 			if (reader.ReadByte () != field_sig)
 				throw new NotSupportedException ();
 
-			return reader.ReadTypeSignature ();
+			var typeRef = reader.ReadTypeSignature ();
+			
+			var len = reader.position - position;
+			reader.position = position;
+			rawSignature = reader.ReadBytes (len);
+
+			return typeRef;
 		}
 
 		public int ReadFieldRVA (FieldDefinition field)
@@ -1930,6 +1961,33 @@ namespace Mono.Cecil {
 			}
 		}
 
+		internal Tuple<int, GenericParameterAttributes, MetadataToken, string> ReadRawGenericParameter (uint riid)
+		{
+			if (!MoveTo (Table.GenericParam, riid)) {
+				return default;
+			}
+
+			var number = ReadUInt16 (); // index
+			var attributes = (GenericParameterAttributes)ReadUInt16 ();
+			var owner = ReadMetadataToken (CodedIndex.TypeOrMethodDef);
+			var name = ReadString ();
+
+			return Tuple.Create ((int)number, attributes, owner, name);
+		}
+
+		internal Tuple<MetadataToken, MetadataToken> ReadRawGenericParameterConstraint (uint riid)
+		{
+			if (!MoveTo (Table.GenericParamConstraint, riid)) {
+				return default;
+			}
+
+			var owner = new MetadataToken(TokenType.GenericParam, ReadTableIndex (Table.GenericParam));
+			var type = ReadMetadataToken (CodedIndex.TypeDefOrRef);
+
+			return Tuple.Create (owner, type);
+		}
+
+
 		void InitializeGenericParameters ()
 		{
 			if (metadata.GenericParameters != null)
@@ -2136,6 +2194,8 @@ namespace Mono.Cecil {
 			var reader = ReadSignature (ReadBlobIndex ());
 			const byte local_sig = 0x7;
 
+			var position = reader.position;
+
 			if (reader.ReadByte () != local_sig)
 				throw new NotSupportedException ();
 
@@ -2147,6 +2207,10 @@ namespace Mono.Cecil {
 
 			for (int i = 0; i < count; i++)
 				variables.Add (new VariableDefinition (reader.ReadTypeSignature ()));
+
+			reader.position = position;
+			var localsSig = reader.ReadBytes ((int)reader.sig_length);
+			module.MetadataSystem.StandAloneSigs[local_var_token] = localsSig;
 
 			return variables;
 		}
@@ -2241,7 +2305,7 @@ namespace Mono.Cecil {
 			return metadata.GetMethodDefinition (rid);
 		}
 
-		MethodSpecification GetMethodSpecification (uint rid)
+		internal MethodSpecification GetMethodSpecification (uint rid)
 		{
 			if (!MoveTo (Table.MethodSpec, rid))
 				return null;
@@ -2250,16 +2314,18 @@ namespace Mono.Cecil {
 				ReadMetadataToken (CodedIndex.MethodDefOrRef));
 			var signature = ReadBlobIndex ();
 
-			var method_spec = ReadMethodSpecSignature (signature, element_method);
+			var method_spec = ReadMethodSpecSignature (signature, element_method, out var rawSignature);
 			method_spec.token = new MetadataToken (TokenType.MethodSpec, rid);
+			method_spec.RawSignature = rawSignature;
 			return method_spec;
 		}
 
-		MethodSpecification ReadMethodSpecSignature (uint signature, MethodReference method)
+		MethodSpecification ReadMethodSpecSignature (uint signature, MethodReference method, out byte [] rawSignature)
 		{
 			var reader = ReadSignature (signature);
 			const byte methodspec_sig = 0x0a;
 
+			var pos = reader.position;
 			var call_conv = reader.ReadByte ();
 
 			if (call_conv != methodspec_sig)
@@ -2270,6 +2336,10 @@ namespace Mono.Cecil {
 			var instance = new GenericInstanceMethod (method, (int) arity);
 
 			reader.ReadGenericInstanceSignature (method, instance, arity);
+
+			var len = reader.position - pos;
+			reader.position = pos;
+			rawSignature = reader.ReadBytes (len);
 
 			return instance;
 		}
@@ -2283,7 +2353,7 @@ namespace Mono.Cecil {
 				return member;
 
 			member = ReadMemberReference (rid);
-			if (member != null && !member.ContainsGenericParameter)
+			if (member != null && (!member.ContainsGenericParameter || module.ReadingMode == ReadingMode.Immediate))
 				metadata.AddMemberReference (member);
 			return member;
 		}
@@ -2418,7 +2488,7 @@ namespace Mono.Cecil {
 			if (!MoveTo (Table.StandAloneSig, token.RID))
 				return null;
 
-			return ReadFieldType (ReadBlobIndex ());
+			return ReadFieldType (ReadBlobIndex (), out _);
 		}
 
 		public object ReadConstant (IConstantProvider owner)
@@ -2510,11 +2580,16 @@ namespace Mono.Cecil {
 				foreach (var custom_attribute in custom_attributes)
 					WindowsRuntimeProjections.Project (owner, custom_attributes, custom_attribute);
 
+			foreach (var attribute in custom_attributes) { 
+				attribute.Owner = owner;
+			}
+
 			return custom_attributes;
 		}
 
 		void ReadCustomAttributeRange (Range range, Collection<CustomAttribute> custom_attributes)
 		{
+			var token = new MetadataToken (TokenType.CustomAttribute, range.Start);
 			if (!MoveTo (Table.CustomAttribute, range.Start))
 				return;
 
@@ -2526,7 +2601,7 @@ namespace Mono.Cecil {
 
 				var signature = ReadBlobIndex ();
 
-				custom_attributes.Add (new CustomAttribute (signature, constructor));
+				custom_attributes.Add (new CustomAttribute (token, signature, constructor));
 			}
 		}
 
@@ -3265,6 +3340,16 @@ namespace Mono.Cecil {
 			this.start = (uint) this.position;
 		}
 
+		public SignatureReader (byte [] data, MetadataReader reader)
+			: base (data)
+		{
+			this.reader = reader;
+			this.position = 0;
+			this.sig_length = (uint)data.Length;
+			this.start = (uint)this.position;
+		}
+
+
 		MetadataToken ReadTypeTokenSignature ()
 		{
 			return CodedIndex.TypeDefOrRef.GetMetadataToken (ReadCompressedUInt32 ());
@@ -3320,8 +3405,10 @@ namespace Mono.Cecil {
 
 			var instance_arguments = instance.GenericArguments;
 
-			for (int i = 0; i < arity; i++)
-				instance_arguments.Add (ReadTypeSignature ());
+			for (int i = 0; i < arity; i++) {
+				instance_arguments.Add (ReadTypeSignature (out var rawsignature));
+				instance_arguments [i].RawSignature = rawsignature;
+			}
 		}
 
 		ArrayType ReadArrayTypeSignature ()
@@ -3362,7 +3449,19 @@ namespace Mono.Cecil {
 
 		public TypeReference ReadTypeSignature ()
 		{
-			return ReadTypeSignature ((ElementType) ReadByte ());
+			return ReadTypeSignature (out _);
+		}
+
+		public TypeReference ReadTypeSignature (out byte [] rawSignature)
+		{
+			var pos = position;
+
+			var res = ReadTypeSignature ((ElementType)ReadByte ());
+
+			var len = position - pos;
+			position = pos;
+			rawSignature = ReadBytes (len);
+			return res;
 		}
 
 		public TypeReference ReadTypeToken ()
@@ -3434,6 +3533,7 @@ namespace Mono.Cecil {
 
 		public void ReadMethodSignature (IMethodSignature method)
 		{
+			var initialOffset = position;
 			var calling_convention = ReadByte ();
 
 			const byte has_this = 0x20;
@@ -3466,8 +3566,11 @@ namespace Mono.Cecil {
 
 			method.MethodReturnType.ReturnType = ReadTypeSignature ();
 
-			if (param_count == 0)
+			if (param_count == 0) 
+			{
+				method.RawSignature = GetReadBuffer ();
 				return;
+			}
 
 			Collection<ParameterDefinition> parameters;
 
@@ -3479,6 +3582,38 @@ namespace Mono.Cecil {
 
 			for (int i = 0; i < param_count; i++)
 				parameters.Add (new ParameterDefinition (ReadTypeSignature ()));
+
+			method.RawSignature = GetReadBuffer ();
+
+			byte [] GetReadBuffer()
+			{
+				byte [] res = new byte [position - initialOffset];
+				Buffer.BlockCopy (buffer, initialOffset, res, 0, res.Length);
+				return res;
+			}
+		}
+
+		public MethodSpecification ReadMethodSpecification(MethodReference method)
+		{
+			const byte methodspec_sig = 0x0a;
+
+			var pos = position;
+			var call_conv = ReadByte ();
+
+			if (call_conv != methodspec_sig)
+				throw new NotSupportedException ();
+
+			var arity = ReadCompressedUInt32 ();
+
+			var instance = new GenericInstanceMethod (method, (int)arity);
+
+			ReadGenericInstanceSignature (method, instance, arity);
+
+			var len = position - pos;
+			position = pos;
+			instance.RawSignature = ReadBytes (len);
+
+			return instance;
 		}
 
 		public object ReadConstantSignature (ElementType type)

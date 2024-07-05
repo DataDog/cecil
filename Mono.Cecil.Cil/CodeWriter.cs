@@ -42,6 +42,11 @@ namespace Mono.Cecil.Cil {
 		{
 			RVA rva;
 
+			if (method.Body != null && method.Body.RawBody != null && method.Body.RawBody.Length > 0) {
+				rva = WriteRawBody (method);
+				return rva;
+			}
+
 			if (IsUnresolved (method)) {
 				if (method.rva == 0)
 					return 0;
@@ -66,6 +71,18 @@ namespace Mono.Cecil.Cil {
 		static bool IsUnresolved (MethodDefinition method)
 		{
 			return method.HasBody && method.HasImage && method.body == null;
+		}
+
+		RVA WriteRawBody (MethodDefinition method)
+		{
+			var raw_body = method.Body.RawBody;
+			var fat_header = (raw_body [0] & 0x3) == 0x3;
+			if (fat_header)
+				Align (4);
+
+			var rva = BeginMethod ();
+			WriteBytes (raw_body);
+			return rva;
 		}
 
 		RVA WriteUnresolvedMethodBody (MethodDefinition method)
@@ -608,6 +625,14 @@ namespace Mono.Cecil.Cil {
 				break;
 			}
 		}
+
+		public MetadataToken GetStandAloneSignature (byte [] rawSig)
+		{
+			var signature = metadata.GetLocalVariableBlobIndex (rawSig);
+
+			return GetStandAloneSignatureToken (signature);
+		}
+
 
 		public MetadataToken GetStandAloneSignature (Collection<VariableDefinition> variables)
 		{

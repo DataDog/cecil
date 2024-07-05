@@ -28,6 +28,8 @@ namespace Mono.Cecil {
 
 		MarshalInfo marshal_info;
 
+		public byte [] RawSignature { get; set; }
+
 		void ResolveLayout ()
 		{
 			if (offset != Mixin.NotResolvedMarker)
@@ -266,6 +268,15 @@ namespace Mono.Cecil {
 			: base (name, fieldType)
 		{
 			this.attributes = (ushort) attributes;
+		}
+
+		public FieldDefinition (string name, FieldAttributes attributes, byte[] sig, TypeDefinition declaringType)
+			: base ()
+		{
+			this.Name = name;
+			this.RawSignature = sig;
+			this.attributes = (ushort)attributes;
+			this.DeclaringType = declaringType;
 		}
 
 		public override FieldDefinition Resolve ()

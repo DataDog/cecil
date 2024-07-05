@@ -24,6 +24,8 @@ namespace Mono.Cecil {
 		Collection<ParameterDefinition> Parameters { get; }
 		TypeReference ReturnType { get; set; }
 		MethodReturnType MethodReturnType { get; }
+
+		byte[] RawSignature { get; set; }
 	}
 
 	static partial class Mixin {
